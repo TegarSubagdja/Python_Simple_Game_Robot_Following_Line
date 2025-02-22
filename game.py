@@ -29,6 +29,15 @@ def calculate_angle(p1, p2):
     delta_x = p2[0] - p1[0]
     return math.degrees(math.atan2(delta_y, delta_x))
 
+# Reset function
+def reset_game():
+    global path_points, robot_pos, robot_angle, moving, target_index
+    path_points = []
+    robot_pos = [WIDTH // 2, HEIGHT // 2]
+    robot_angle = 0
+    moving = False
+    target_index = 0
+
 # Main loop
 running = True
 while running:
@@ -69,6 +78,8 @@ while running:
                 if path_points:
                     moving = True
                     target_index = 0  # Reset ke titik pertama
+            elif event.key == pygame.K_r and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                reset_game()  # Ctrl + R untuk reset semua
     
     # Move robot along the path
     if moving and target_index < len(path_points):
