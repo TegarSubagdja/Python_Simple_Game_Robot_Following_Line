@@ -50,7 +50,7 @@ def aruco_thread():
     parameters = aruco.DetectorParameters()
     detector = aruco.ArucoDetector(aruco_dict, parameters)
     
-    # Camera calibration parameters - adapt these for your camera if needed
+    # Camera calibration parameters
     camera_matrix = np.array([[1000, 0, FRAME_WIDTH // 2], 
                               [0, 1000, FRAME_HEIGHT // 2], 
                               [0, 0, 1]], dtype=np.float32)
@@ -62,7 +62,10 @@ def aruco_thread():
         if not ret:
             break
             
-        # Convert to grayscale for detection
+        # Flip the frame horizontally to handle mirror effect
+        frame_display = cv2.flip(frame, 1)  # Only for display, not for detection
+            
+        # Convert to grayscale for detection (use original unflipped frame)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         # Detect markers
@@ -70,19 +73,29 @@ def aruco_thread():
         
         marker_detected = False
         if ids is not None:
-            # Draw detected markers on frame
-            aruco.drawDetectedMarkers(frame, corners, ids)
+            # Draw detected markers on the display frame
+            corners_display = []
+            for corner in corners:
+                # Mirror the corners for display
+                mirrored_corner = corner.copy()
+                mirrored_corner[0, :, 0] = FRAME_WIDTH - mirrored_corner[0, :, 0]
+                corners_display.append(mirrored_corner)
+            
+            aruco.drawDetectedMarkers(frame_display, corners_display, ids)
             
             for i in range(len(ids)):
-                # Get marker corners
+                # Get marker corners from original frame
                 marker_corners = corners[i][0]
                 
                 # Calculate marker position (center)
                 center_x = int(np.mean([c[0] for c in marker_corners]))
                 center_y = int(np.mean([c[1] for c in marker_corners]))
                 
-                # Update robot position directly from marker position
-                robot_pos[0] = center_x
+                # Mirror the x-coordinate for pygame (to handle mirror effect)
+                mirrored_center_x = FRAME_WIDTH - center_x
+                
+                # Update robot position with mirrored coordinates
+                robot_pos[0] = mirrored_center_x
                 robot_pos[1] = center_y
                 
                 # Calculate marker orientation
@@ -93,21 +106,23 @@ def aruco_thread():
                 # Calculate angle from center to front midpoint
                 dx = front_mid_x - center_x
                 dy = front_mid_y - center_y
-                robot_angle = math.degrees(math.atan2(dy, dx))
+                
+                # Mirror the angle calculation for correct orientation
+                angle = math.degrees(math.atan2(dy, -dx))  # Negate dx to mirror the angle
+                robot_angle = angle
                 
                 marker_detected = True
                 
-                # Draw orientation line on the frame for debugging
-                cv2.line(frame, (center_x, center_y), 
-                        (int(center_x + 30 * math.cos(math.radians(robot_angle))), 
-                         int(center_y + 30 * math.sin(math.radians(robot_angle)))), 
+                # Draw orientation line on the display frame (with mirrored coordinates)
+                mirrored_front_x = FRAME_WIDTH - front_mid_x
+                cv2.line(frame_display, 
+                        (int(mirrored_center_x), int(center_y)), 
+                        (int(mirrored_center_x + 30 * math.cos(math.radians(angle))), 
+                         int(center_y + 30 * math.sin(math.radians(angle)))), 
                         (0, 255, 0), 2)
         
-        # Flip the frame horizontally to make it mirror-like
-        frame = cv2.flip(frame, 1)
-        
         # Show camera feed with detections
-        cv2.imshow('ArUco Detection', frame)
+        cv2.imshow('ArUco Detection', frame_display)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
