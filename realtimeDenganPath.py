@@ -27,13 +27,14 @@ RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
+YELLOW = (255, 255, 0)
+PURPLE = (128, 0, 128)
 
 # Variables
 path_points = []
 robot_pos = [FRAME_WIDTH // 2, FRAME_HEIGHT // 2]
 robot_angle = 0
-moving = False
-target_index = 0
+current_target_index = 0
 marker_detected = False
 
 # Function to calculate angle between two points
@@ -41,6 +42,10 @@ def calculate_angle(p1, p2):
     delta_y = p2[1] - p1[1]
     delta_x = p2[0] - p1[0]
     return math.degrees(math.atan2(delta_y, delta_x))
+
+# Function to calculate distance between two points
+def calculate_distance(p1, p2):
+    return math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
 
 # Thread function for ArUco detection
 def aruco_thread():
@@ -138,6 +143,7 @@ aruco_thread.start()
 # Main loop
 clock = pygame.time.Clock()
 running = True
+font = pygame.font.Font(None, 24)
 
 while running:
     # Handle events
@@ -151,42 +157,118 @@ while running:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_c:  # Clear path with 'c' key
                 path_points = []
+                current_target_index = 0
                 print("Path cleared")
     
     # Clear screen
     screen.fill(WHITE)
     
+    # Calculate information for current target point (if exists)
+    target_angle = 0
+    angle_error = 0
+    distance = 0
+    
+    if path_points and marker_detected:
+        # Find current target point
+        current_target = path_points[min(current_target_index, len(path_points) - 1)]
+        
+        # Calculate target angle (angle robot needs to be at to point to target)
+        target_angle = calculate_angle(robot_pos, current_target)
+        
+        # Calculate angle error (difference between robot angle and target angle)
+        # Normalize to -180 to 180 range
+        angle_error = (target_angle - robot_angle) % 360
+        if angle_error > 180:
+            angle_error -= 360
+            
+        # Calculate distance to target
+        distance = calculate_distance(robot_pos, current_target)
+        
+        # Draw line to current target
+        pygame.draw.line(screen, YELLOW, robot_pos, current_target, 2)
+        
+        # Highlight current target
+        pygame.draw.circle(screen, PURPLE, current_target, 8)
+        
+        # Draw all target angles for visualization
+        target_arrow_length = 40
+        target_arrow_x = robot_pos[0] + target_arrow_length * math.cos(math.radians(target_angle))
+        target_arrow_y = robot_pos[1] + target_arrow_length * math.sin(math.radians(target_angle))
+        pygame.draw.line(screen, GREEN, robot_pos, (target_arrow_x, target_arrow_y), 2)
+    
     # Draw path
     if len(path_points) > 1:
         pygame.draw.lines(screen, BLUE, False, path_points, 3)
-        # Draw points along the path
-        for point in path_points:
-            pygame.draw.circle(screen, GREEN, point, 5)
+    
+    # Draw all path points
+    for i, point in enumerate(path_points):
+        color = PURPLE if i == current_target_index and current_target_index < len(path_points) else GREEN
+        pygame.draw.circle(screen, color, point, 6)
     
     # Draw robot
     if marker_detected:
         # Draw robot body
-        pygame.draw.circle(screen, RED, robot_pos, 15)
+        pygame.draw.circle(screen, RED, (int(robot_pos[0]), int(robot_pos[1])), 15)
         
-        # Draw direction indicator
+        # Draw robot direction indicator
         arrow_length = 25
         arrow_x = robot_pos[0] + arrow_length * math.cos(math.radians(robot_angle))
         arrow_y = robot_pos[1] + arrow_length * math.sin(math.radians(robot_angle))
-        pygame.draw.line(screen, BLACK, robot_pos, (arrow_x, arrow_y), 3)
+        pygame.draw.line(screen, BLACK, (int(robot_pos[0]), int(robot_pos[1])), (int(arrow_x), int(arrow_y)), 3)
         
-        # Draw small circle at the arrow tip to make it more visible
+        # Draw small circle at the arrow tip
         pygame.draw.circle(screen, BLACK, (int(arrow_x), int(arrow_y)), 5)
         
-        # Add text showing detection status
-        font = pygame.font.Font(None, 36)
-        text = font.render("Marker Detected", True, (0, 100, 0))
-        screen.blit(text, (10, 10))
+        # Display information about marker detection and robot state
+        status_text = font.render("Marker Detected", True, (0, 100, 0))
+        screen.blit(status_text, (10, 10))
+        
+        # Display position information
+        pos_text = font.render(f"Position: ({int(robot_pos[0])}, {int(robot_pos[1])})", True, BLACK)
+        screen.blit(pos_text, (10, 40))
+        
+        # Display angle information
+        angle_text = font.render(f"Robot Angle: {robot_angle:.1f}°", True, BLACK)
+        screen.blit(angle_text, (10, 70))
+        
+        # Display target information if there are path points
+        if path_points:
+            # Display target angle
+            target_angle_text = font.render(f"Target Angle: {target_angle:.1f}°", True, GREEN)
+            screen.blit(target_angle_text, (10, 100))
+            
+            # Display angle error
+            error_color = GREEN if abs(angle_error) < 10 else YELLOW if abs(angle_error) < 30 else RED
+            error_text = font.render(f"Angle Error: {angle_error:.1f}°", True, error_color)
+            screen.blit(error_text, (10, 130))
+            
+            # Display distance to target
+            dist_text = font.render(f"Distance to Target: {distance:.1f} pixels", True, BLUE)
+            screen.blit(dist_text, (10, 160))
+            
+            # Display whether robot is pointing to target
+            aligned = abs(angle_error) < 10  # Consider aligned if error is less than 10 degrees
+            aligned_text = font.render(
+                f"Status: {'Aligned to target' if aligned else 'Not aligned'}",
+                True, 
+                GREEN if aligned else RED
+            )
+            screen.blit(aligned_text, (10, 190))
     else:
         # Draw inactive robot
-        pygame.draw.circle(screen, (200, 200, 200), robot_pos, 15)
-        font = pygame.font.Font(None, 36)
-        text = font.render("No Marker Detected", True, (200, 0, 0))
-        screen.blit(text, (10, 10))
+        pygame.draw.circle(screen, (200, 200, 200), (int(robot_pos[0]), int(robot_pos[1])), 15)
+        no_marker_text = font.render("No Marker Detected", True, (200, 0, 0))
+        screen.blit(no_marker_text, (10, 10))
+    
+    # Display instructions
+    instructions = [
+        "Left-click: Add waypoint",
+        "C key: Clear path",
+        "Q key in camera window: Quit"
+    ]
+    for i, instruction in enumerate(instructions):
+        inst_text = font.render(instruction, True, (100, 100, 100))
+        screen.blit(inst_text, (FRAME_WIDTH - 200, 10 + i * 25))
     
     # Update display
     pygame.display.flip()
